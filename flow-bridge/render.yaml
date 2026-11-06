@@ -4,13 +4,10 @@ services:
     runtime: docker
     dockerfilePath: ./flow-bridge/Dockerfile
     dockerContext: .
+    plan: free
     healthCheckPath: /api/health
     envVars:
       - key: FLOW_BRIDGE_TOKEN
         generateValue: true
       - key: FLOW_BRIDGE_DB
-        value: /var/data/flow_bridge.sqlite3
-    disk:
-      name: flow-bridge-data
-      mountPath: /var/data
-      sizeGB: 1
+        value: /tmp/flow_bridge.sqlite3
