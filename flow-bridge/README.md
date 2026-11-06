@@ -12,7 +12,9 @@ Authenticated queue API intended to connect a browser Userscript to a cloud queu
 ## Important limitations
 This server does not control Google Flow, generate media server-side, upload reference images, or download results. A compatible Userscript in an authenticated Google Flow tab is still required. Browser execution, Google account access, quotas, and any CAPTCHA remain under Google's control.
 
-Never put Google cookies, session tokens, or the bridge secret in this repository. Set FLOW_BRIDGE_TOKEN as a private environment variable in the hosting provider. Use HTTPS only.
+The current Render Blueprint targets the Free web-service plan for testing. Free services spin down after 15 minutes without inbound traffic, may take about a minute to wake, and have an ephemeral filesystem. The SQLite queue can be lost on restart, spin-down, or redeploy. This is a test setup, not durable storage.
+
+Never put Google cookies, session tokens, or the bridge secret in this repository. Render generates FLOW_BRIDGE_TOKEN as a private environment variable. Use HTTPS only.
 
 ## Deployment
-The included Render Blueprint describes a web service and persistent disk. Review current hosting costs and disk requirements before deploying; a persistent disk may require a paid plan. Do not assume a free instance provides durable SQLite storage.
+Open the Render Blueprint flow for this repository and create the service using the Free plan. After deployment, test GET /api/health before connecting the Userscript.
