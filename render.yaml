@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: flow-bridge
+    runtime: docker
+    dockerfilePath: ./flow-bridge/Dockerfile
+    dockerContext: .
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: FLOW_BRIDGE_TOKEN
+        generateValue: true
+      - key: FLOW_BRIDGE_DB
+        value: /tmp/flow_bridge.sqlite3
