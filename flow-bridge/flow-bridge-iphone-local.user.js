@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Flow Bridge iPhone — Local Only
 // @namespace    https://github.com/unknowniragod-cloud/ddded
-// @version      1.0.0
+// @version      1.1.0
 // @description  Private on-device prompt queue for Google Flow in iPhone Safari. No server, account, or API token.
 // @match        https://labs.google/fx/tools/flow/*
 // @match        https://flow.google.com/*
@@ -28,6 +28,7 @@
   let history = read(HISTORY, []);
   let paused = true;
   let collapsed = false;
+  let autoGenerate = read('flowBridgeAutoGenerateV1', true);
   let observer = null;
 
   const id = () => 'local-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
@@ -39,7 +40,7 @@
     #fb-local *{box-sizing:border-box}#fbl-head{display:flex;justify-content:space-between;align-items:center;padding:11px;background:#222d40;font-weight:700}#fbl-head small{display:block;font-size:10px;color:#b5c2d7;font-weight:400}
     #fbl-body{padding:10px;display:grid;gap:8px;max-height:calc(78dvh - 45px);overflow:auto;-webkit-overflow-scrolling:touch}#fb-local.mini #fbl-body{display:none}
     #fb-local textarea,#fb-local input,#fb-local select{width:100%;border:1px solid #4b5a73;border-radius:8px;background:#0d1420;color:white;padding:9px;font:12px -apple-system,BlinkMacSystemFont,sans-serif}
-    #fb-local textarea{min-height:85px;resize:vertical}#fb-local button{border:0;border-radius:8px;background:#426ce0;color:white;padding:10px 8px;min-height:38px;font-weight:650;font-size:12px}#fb-local button.alt{background:#354258}#fb-local button.red{background:#71414c}#fbl-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+    #fb-local textarea{min-height:85px;resize:vertical}#fb-local button{border:0;border-radius:8px;background:#426ce0;color:white;padding:10px 8px;min-height:38px;font-weight:650;font-size:12px}#fb-local button.alt{background:#354258}#fb-local button.red{background:#71414c}#fbl-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px}#fbl-auto{display:flex;align-items:center;gap:8px;padding:7px 9px;background:#222d40;border-radius:8px;font-size:11px}#fbl-auto input{width:auto;min-height:auto}
     #fbl-state{padding:8px;background:#222d40;border-radius:8px;line-height:1.5;font-size:11px;overflow-wrap:anywhere}#fbl-list{display:grid;gap:5px}#fbl-list article{padding:7px;background:#0d1420;border:1px solid #354258;border-radius:8px;font-size:10px;line-height:1.4;overflow-wrap:anywhere}
     #fbl-log{white-space:pre-wrap;background:#0b111b;color:#b9c7dc;padding:8px;border-radius:8px;max-height:76px;overflow:auto;font:10px/1.45 ui-monospace,monospace}
     #fb-local .hint{font-size:10px;color:#aab7cc;line-height:1.4}
@@ -53,8 +54,9 @@
       <div id="fbl-state">Ready · ${queue.length} queued</div>
       <textarea id="fbl-prompt" placeholder="Ilagay ang prompt dito."></textarea>
       <div id="fbl-actions"><button id="fbl-add">Add to queue</button><button id="fbl-next" class="alt">Insert next prompt</button></div>
+      <label id="fbl-auto"><input id="fbl-auto-check" type="checkbox"> Auto-click Generate after inserting prompt</label>
       <div id="fbl-actions"><button id="fbl-start">Start</button><button id="fbl-pause" class="alt">Pause</button><button id="fbl-done" class="alt">Mark done</button><button id="fbl-skip" class="red">Skip active</button></div>
-      <div class="hint">Local-only: naka-save ang queue sa browser storage ng device na ito. Walang server. Ang Insert next prompt ay maglalagay lang ng text sa Flow composer; ikaw ang magche-check ng settings at pipindot ng Generate.</div>
+      <div class="hint">Local-only: naka-save ang queue sa browser storage ng device na ito. Auto-click clicks only a visible, enabled Generate/Create button. Keep Safari open and monitor output.</div>
       <div id="fbl-list"></div>
       <div id="fbl-actions"><button id="fbl-export" class="alt">Export backup</button><button id="fbl-import" class="alt">Import backup</button></div>
       <input id="fbl-file" type="file" accept="application/json" style="display:none">
@@ -69,6 +71,7 @@
     $('#fbl-state').textContent = (paused ? 'Paused' : 'Ready') + ' · ' + queue.length + ' queued · ' + activeText;
     $('#fbl-list').innerHTML = queue.slice(0, 8).map((job, index) => '<article><b>' + (index + 1) + '. ' + esc(job.prompt.slice(0, 135)) + '</b></article>').join('') || '<div class="hint">Wala pang queued prompts.</div>';
     $('#fbl-pause').textContent = paused ? 'Resume' : 'Pause';
+    $('#fbl-auto-check').checked = autoGenerate;
     $('#fbl-done').disabled = !active;
     $('#fbl-skip').disabled = !active;
   }
@@ -96,6 +99,19 @@
     }
     return el;
   }
+  function clickGenerate() {
+    if (!autoGenerate) { log('Auto-click off: prompt inserted; tap Generate manually when ready.'); return false; }
+    const candidates = [...document.querySelectorAll('button,[role="button"]')].filter(el => {
+      if (!el.getClientRects().length || el.disabled || el.getAttribute('aria-disabled') === 'true' || root.contains(el)) return false;
+      const label = [el.innerText, el.getAttribute('aria-label'), el.getAttribute('data-testid'), el.getAttribute('title')].filter(Boolean).join(' ').trim();
+      return /^(generate|create|generate video|create video)$/i.test(label);
+    });
+    const button = candidates.find(el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
+    if (!button) { log('Prompt inserted, but no enabled Generate/Create button was found. Check Flow UI and click manually if needed.'); return false; }
+    button.click();
+    log('Clicked Generate/Create. Monitor the generation in Flow.');
+    return true;
+  }
   function activateNext() {
     if (active) { log('May active prompt pa. Mark done o Skip active muna.'); return; }
     if (!queue.length) { log('Empty ang queue. Magdagdag muna ng prompt.'); return; }
@@ -104,7 +120,8 @@
       insertPrompt(job.prompt);
       active = {...job, startedAt:new Date().toISOString(), status:'active'};
       persist();
-      log('Inserted prompt ' + job.id + '. Review then tap Generate in Flow.');
+      log('Inserted prompt ' + job.id + '.');
+      setTimeout(clickGenerate, 900);
     } catch (error) {
       queue.unshift(job);
       persist();
@@ -120,7 +137,8 @@
     log('Added to local queue.');
   };
   $('#fbl-next').onclick = activateNext;
-  $('#fbl-start').onclick = () => { paused = false; render(); activateNext(); log('Local queue started. Hindi ito nagki-click ng Generate.'); };
+  $('#fbl-auto-check').onchange = (event) => { autoGenerate = event.target.checked; write('flowBridgeAutoGenerateV1', autoGenerate); render(); log(autoGenerate ? 'Auto-click enabled.' : 'Auto-click disabled.'); };
+  $('#fbl-start').onclick = () => { paused = false; render(); activateNext(); log('Local queue started.'); };
   $('#fbl-pause').onclick = () => { paused = !paused; render(); log(paused ? 'Paused.' : 'Resumed.'); if (!paused && !active) activateNext(); };
   $('#fbl-done').onclick = () => {
     if (!active) return;
