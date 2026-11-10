@@ -16,9 +16,11 @@
 
   const KEY = 'flowBridgeMobileSettings';
   const defaults = { apiUrl: '', token: '', workerId: 'iphone-' + Math.random().toString(36).slice(2, 10), enabled: false };
-  let cfg = { ...defaults, ...(GM_getValue ? GM_getValue(KEY, {}) : {}) };
+  let stored = {};
+  try { stored = GM_getValue ? GM_getValue(KEY, {}) : JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (_) {}
+  let cfg = { ...defaults, ...(stored || {}) };
   let current = null, paused = false, timer = null, heartbeatTimer = null, logLines = [];
-  const save = () => { if (GM_setValue) GM_setValue(KEY, cfg); };
+  const save = () => { try { if (GM_setValue) GM_setValue(KEY, cfg); else localStorage.setItem(KEY, JSON.stringify(cfg)); } catch (_) {} };
   const log = (s) => { logLines.unshift(new Date().toLocaleTimeString() + ' ' + s); logLines = logLines.slice(0, 35); const el = document.querySelector('#fb-log'); if (el) el.textContent = logLines.join('\n'); };
   const api = async (path, method='GET', body=null) => {
     if (!cfg.apiUrl || !cfg.token) throw new Error('Set API URL and Bearer token in Settings');
@@ -49,10 +51,11 @@
     <div id="fb-body">
       <div id="fb-state">No active job. Configure the API connection to begin.</div>
       <textarea id="fb-prompt" placeholder="Prompt — one prompt per job"></textarea>
+      <input id="fb-result-url" type="url" placeholder="Optional verified result URL">
       <div id="fb-actions"><button id="fb-submit">Add to cloud queue</button><button id="fb-poll" class="alt">Check queue</button></div>
       <div id="fb-actions"><button id="fb-start">Start worker</button><button id="fb-pause" class="alt">Pause</button><button id="fb-stop" class="red">Stop worker</button><button id="fb-complete" class="alt" disabled>Mark completed</button></div>
       <div class="hint">Generation stays in this signed-in Flow tab. Review the prompt, tap Flow's own Generate button yourself, then confirm completion here. This script does not create trusted taps or bypass CAPTCHA.</div>
-      <details><summary>Connection settings</summary><label>Bridge API URL<input id="fb-url" placeholder="https://your-service.onrender.com"></label><label>Bearer token<input id="fb-token" type="password" autocomplete="off" placeholder="Paste Render secret"></label><button id="fb-save" class="alt">Save settings</button></details>
+      <details><summary>Connection settings</summary><label>Bridge API URL<input id="fb-url" placeholder="https://your-service.onrender.com"></label><label>Bearer token<input id="fb-token" type="password" autocomplete="off" placeholder="Paste Render secret"></label><button id="fb-save" class="alt">Save settings</button><div id="fb-actions"><button id="fb-export" class="alt">Export settings</button><button id="fb-import" class="alt">Import settings</button></div><input id="fb-import-file" type="file" accept="application/json" style="display:none"></details>
       <div id="fb-log"></div>
     </div>`;
   document.body.appendChild(root);
@@ -61,7 +64,8 @@
   $('#fb-min').onclick=()=>root.classList.toggle('mini');
   $('#fb-save').onclick=()=>{cfg.apiUrl=$('#fb-url').value.trim();cfg.token=$('#fb-token').value.trim();save();log('Settings saved on this device.');checkHealth();};
   const stateText=(s)=>$('#fb-state').textContent=s;
-  async function checkHealth(){try{const h=await api('/api/health');$('#fb-connection').textContent='Connected · '+h.version;return true;}catch(e){$('#fb-connection').textContent='Disconnected';log('Connection: '+e.message);return false;}}
+  async function refreshQueue(){try{const q=await api('/api/jobs?limit=1');const c=q.counts||{};$('#fb-connection').textContent='Connected · queue '+(c.queued||0)+' · running '+(c.running||0); }catch(_){}}
+  async function checkHealth(){try{const h=await api('/api/health');$('#fb-connection').textContent='Connected · '+h.version;refreshQueue();return true;}catch(e){$('#fb-connection').textContent='Disconnected';log('Connection: '+e.message);return false;}}
   async function submit(){
     const prompt=$('#fb-prompt').value.trim(); if(!prompt) return log('Enter a prompt first.');
     try{const j=await api('/api/jobs','POST',{prompt,mode:'auto',references:[],options:{source:'iphone-safari'}});$('#fb-prompt').value='';log('Queued '+j.id);stateText('Queued job '+j.id);}
@@ -94,7 +98,10 @@
     if(!current)return;
     const job=current;
     try{
-      const result={url:location.href,completed_at:new Date().toISOString(),browser:'iPhone Safari'};
+      const supplied=$('#fb-result-url').value.trim();
+      const result={flow_page:location.href,completed_at:new Date().toISOString(),browser:'iPhone Safari'};
+      if(supplied){if(!/^https:\/\//i.test(supplied)){log('Result URL must start with https://');return;}result.result_url=supplied;}
+
       await api('/api/jobs/'+job.id+'/status','POST',{status,progress:status==='completed'?100:0,result,error:error||null});
       log('Reported '+status+' for '+job.id);
     }catch(e){log('Could not report '+status+': '+e.message);}
@@ -103,9 +110,12 @@
   $('#fb-submit').onclick=submit;
   $('#fb-poll').onclick=()=>checkHealth().then(()=>claim());
   $('#fb-start').onclick=async()=>{if(!await checkHealth())return;cfg.enabled=true;paused=false;save();if(timer)clearInterval(timer);timer=setInterval(claim,10000);log('Worker started. Keep this Flow tab open and active.');claim();};
-  $('#fb-pause').onclick=()=>{paused=!paused;$('#fb-pause').textContent=paused?'Resume':'Pause';log(paused?'Worker paused.':'Worker resumed.');if(!paused)claim();};
+  $('#fb-pause').onclick=async()=>{paused=!paused;$('#fb-pause').textContent=paused?'Resume':'Pause';try{await api('/api/queue/control','POST',{action:paused?'pause':'resume'});}catch(e){log('Queue control: '+e.message);}log(paused?'Worker paused.':'Worker resumed.');if(!paused)claim();};
   $('#fb-stop').onclick=()=>{cfg.enabled=false;paused=true;save();if(timer)clearInterval(timer);timer=null;log('Worker stopped. Active job remains leased until completion or timeout.');};
   $('#fb-complete').onclick=()=>report('completed');
+  $('#fb-export').onclick=()=>{const blob=new Blob([JSON.stringify(cfg,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='flow-bridge-settings.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);};
+  $('#fb-import').onclick=()=>$('#fb-import-file').click();
+  $('#fb-import-file').onchange=async(e)=>{const file=e.target.files?.[0];if(!file)return;try{const imported=JSON.parse(await file.text());if(typeof imported.apiUrl!=='string'||typeof imported.token!=='string')throw new Error('Invalid settings file');cfg={...defaults,...imported};save();$('#fb-url').value=cfg.apiUrl;$('#fb-token').value=cfg.token;log('Settings imported.');checkHealth();}catch(err){log('Import failed: '+err.message);}e.target.value='';};
   checkHealth();
   log('Connector loaded. Configure your API URL and token.');
 })();
