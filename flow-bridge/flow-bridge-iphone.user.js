@@ -15,7 +15,7 @@
   if (window.top !== window.self || document.getElementById('fb-mobile')) return;
 
   const KEY = 'flowBridgeMobileSettings';
-  const defaults = { apiUrl: '', token: '', workerId: 'iphone-' + Math.random().toString(36).slice(2, 10), enabled: false };
+  const defaults = { apiUrl: '', token: '', workerId: 'iphone-' + Math.random().toString(36).slice(2, 10), enabled: false, mode:'auto', model:'', ratio:'auto', resolution:'720p', duration:'8s' };
   let stored = {};
   try { stored = GM_getValue ? GM_getValue(KEY, {}) : JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (_) {}
   let cfg = { ...defaults, ...(stored || {}) };
@@ -51,6 +51,14 @@
     <div id="fb-body">
       <div id="fb-state">No active job. Configure the API connection to begin.</div>
       <textarea id="fb-prompt" placeholder="Prompt — one prompt per job"></textarea>
+      <div id="fb-actions">
+        <label>Mode<select id="fb-mode"><option value="auto">Auto</option><option value="image">Image</option><option value="video">Video</option><option value="text_to_image">Text to image</option><option value="image_to_video">Image to video</option><option value="frames_to_video">Start/end frames</option><option value="ingredients_to_video">Ingredients</option></select></label>
+        <label>Model<input id="fb-model" placeholder="Flow model (optional)"></label>
+        <label>Aspect ratio<select id="fb-ratio"><option value="auto">Flow default</option><option>16:9</option><option>9:16</option><option>1:1</option><option>4:3</option><option>3:4</option></select></label>
+        <label>Resolution<select id="fb-resolution"><option>720p</option><option>1080p</option><option>2K</option><option>4K</option></select></label>
+        <label>Duration<select id="fb-duration"><option>5s</option><option>8s</option><option>10s</option></select></label>
+      </div>
+      <textarea id="fb-references" placeholder="Optional reference image URLs (one HTTPS URL per line; metadata only, not auto-attached)"></textarea>
       <input id="fb-result-url" type="url" placeholder="Optional verified result URL">
       <div id="fb-actions"><button id="fb-submit">Add to cloud queue</button><button id="fb-poll" class="alt">Check queue</button></div>
       <div id="fb-actions"><button id="fb-start">Start worker</button><button id="fb-pause" class="alt">Pause</button><button id="fb-stop" class="red">Stop worker</button><button id="fb-complete" class="alt" disabled>Mark completed</button></div>
@@ -60,7 +68,7 @@
     </div>`;
   document.body.appendChild(root);
   const $ = (s) => root.querySelector(s);
-  $('#fb-url').value=cfg.apiUrl; $('#fb-token').value=cfg.token;
+  $('#fb-url').value=cfg.apiUrl; $('#fb-token').value=cfg.token; $('#fb-mode').value=cfg.mode; $('#fb-model').value=cfg.model; $('#fb-ratio').value=cfg.ratio; $('#fb-resolution').value=cfg.resolution; $('#fb-duration').value=cfg.duration;
   $('#fb-min').onclick=()=>root.classList.toggle('mini');
   $('#fb-save').onclick=()=>{cfg.apiUrl=$('#fb-url').value.trim();cfg.token=$('#fb-token').value.trim();save();log('Settings saved on this device.');checkHealth();};
   const stateText=(s)=>$('#fb-state').textContent=s;
@@ -68,7 +76,9 @@
   async function checkHealth(){try{const h=await api('/api/health');$('#fb-connection').textContent='Connected · '+h.version;refreshQueue();return true;}catch(e){$('#fb-connection').textContent='Disconnected';log('Connection: '+e.message);return false;}}
   async function submit(){
     const prompt=$('#fb-prompt').value.trim(); if(!prompt) return log('Enter a prompt first.');
-    try{const j=await api('/api/jobs','POST',{prompt,mode:'auto',references:[],options:{source:'iphone-safari'}});$('#fb-prompt').value='';log('Queued '+j.id);stateText('Queued job '+j.id);}
+    try{cfg.mode=$('#fb-mode').value;cfg.model=$('#fb-model').value.trim();cfg.ratio=$('#fb-ratio').value;cfg.resolution=$('#fb-resolution').value;cfg.duration=$('#fb-duration').value;save();
+      const references=$('#fb-references').value.split(/\\n+/).map(x=>x.trim()).filter(Boolean).map(url=>({url,kind:'image'}));
+      const j=await api('/api/jobs','POST',{prompt,mode:cfg.mode,model:cfg.model||null,aspect_ratio:cfg.ratio==='auto'?null:cfg.ratio,references,options:{source:'iphone-safari',resolution:cfg.resolution,duration:cfg.duration}});$('#fb-prompt').value='';log('Queued '+j.id);stateText('Queued job '+j.id);}
     catch(e){log('Submit failed: '+e.message);}
   }
   function findComposer(){
