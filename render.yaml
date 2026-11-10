@@ -4,10 +4,22 @@ services:
     runtime: docker
     dockerfilePath: ./flow-bridge/Dockerfile
     dockerContext: .
-    plan: free
+    plan: starter
     healthCheckPath: /api/health
+    disk:
+      name: flow-bridge-data
+      mountPath: /var/data
+      sizeGB: 1
     envVars:
       - key: FLOW_BRIDGE_TOKEN
         generateValue: true
       - key: FLOW_BRIDGE_DB
-        value: /tmp/flow_bridge.sqlite3
+        value: /var/data/flow_bridge.sqlite3
+      - key: FLOW_BRIDGE_ALLOWED_ORIGINS
+        value: https://labs.google,https://flow.google.com
+      - key: FLOW_BRIDGE_LEASE_SECONDS
+        value: "180"
+      - key: FLOW_BRIDGE_MAX_RETRIES
+        value: "2"
+      - key: FLOW_BRIDGE_RETRY_BASE_SECONDS
+        value: "20"
