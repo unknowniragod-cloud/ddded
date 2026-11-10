@@ -63,3 +63,23 @@ def test_validation_rejects_invalid_reference_url(client):
     r = client.post("/api/jobs", headers=headers(), json={
         "prompt":"test","references":[{"name":"bad","url":"javascript:alert(1)"}]})
     assert r.status_code == 422
+
+def test_legacy_database_migrates_without_losing_jobs(tmp_path, monkeypatch):
+    import sqlite3
+    db_path = tmp_path / "legacy.sqlite3"
+    c = sqlite3.connect(db_path)
+    c.execute("""CREATE TABLE jobs(id TEXT PRIMARY KEY,prompt TEXT NOT NULL,model TEXT,aspect_ratio TEXT,
+        status TEXT NOT NULL,result TEXT,error TEXT,created_at TEXT,updated_at TEXT)""")
+    c.execute("INSERT INTO jobs VALUES(?,?,?,?,?,?,?,?,?)",
+              ("legacy-1","old prompt",None,None,"queued","old-output",None,"2024-01-01","2024-01-01"))
+    c.commit()
+    c.close()
+    monkeypatch.setattr(server, "DB_PATH", str(db_path))
+    monkeypatch.setattr(server, "TOKEN", "test-secret")
+    server.startup()
+    with TestClient(server.app) as c:
+        jobs = c.get("/api/jobs", headers=headers()).json()["jobs"]
+        assert len(jobs) == 1
+        assert jobs[0]["id"] == "legacy-1"
+        assert jobs[0]["prompt"] == "old prompt"
+        assert jobs[0]["result"]["legacy_result"] == "old-output"
