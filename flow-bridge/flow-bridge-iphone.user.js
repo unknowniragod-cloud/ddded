@@ -61,7 +61,7 @@
       <textarea id="fb-references" placeholder="Optional reference image URLs (one HTTPS URL per line; metadata only, not auto-attached)"></textarea>
       <input id="fb-result-url" type="url" placeholder="Optional verified result URL">
       <div id="fb-actions"><button id="fb-submit">Add to cloud queue</button><button id="fb-poll" class="alt">Check queue</button></div>
-      <div id="fb-actions"><button id="fb-start">Start worker</button><button id="fb-pause" class="alt">Pause</button><button id="fb-stop" class="red">Stop worker</button><button id="fb-complete" class="alt" disabled>Mark completed</button></div>
+      <div id="fb-actions"><button id="fb-start">Start worker</button><button id="fb-pause" class="alt">Pause</button><button id="fb-stop" class="red">Stop worker</button><button id="fb-complete" class="alt" disabled>Mark completed</button><button id="fb-cancel" class="red" disabled>Cancel job</button></div>
       <div class="hint">Generation stays in this signed-in Flow tab. Review the prompt, tap Flow's own Generate button yourself, then confirm completion here. This script does not create trusted taps or bypass CAPTCHA.</div>
       <details><summary>Connection settings</summary><label>Bridge API URL<input id="fb-url" placeholder="https://your-service.onrender.com"></label><label>Bearer token<input id="fb-token" type="password" autocomplete="off" placeholder="Paste Render secret"></label><button id="fb-save" class="alt">Save settings</button><div id="fb-actions"><button id="fb-export" class="alt">Export settings</button><button id="fb-import" class="alt">Import settings</button></div><input id="fb-import-file" type="file" accept="application/json" style="display:none"></details>
       <div id="fb-log"></div>
@@ -100,7 +100,7 @@
       if(!data.job)return;
       current=data.job; fillPrompt(current.prompt);
       stateText('Claimed '+current.id+' · '+current.mode+'\nPrompt inserted. Review settings and press Generate in Flow manually.');
-      $('#fb-complete').disabled=false; log('Claimed '+current.id+' and inserted prompt.');
+      $('#fb-complete').disabled=false;$('#fb-cancel').disabled=false; log('Claimed '+current.id+' and inserted prompt.');
       heartbeatTimer=setInterval(()=>api('/api/jobs/'+current.id+'/heartbeat','POST',{progress:25,message:'Waiting for user-operated Flow generation'}).catch(e=>log('Heartbeat: '+e.message)),45000);
     }catch(e){log('Worker error: '+e.message);if(current)await report('failed',e.message);}
   }
@@ -115,14 +115,14 @@
       await api('/api/jobs/'+job.id+'/status','POST',{status,progress:status==='completed'?100:0,result,error:error||null});
       log('Reported '+status+' for '+job.id);
     }catch(e){log('Could not report '+status+': '+e.message);}
-    clearInterval(heartbeatTimer);heartbeatTimer=null;current=null;$('#fb-complete').disabled=true;stateText('No active job.'); 
+    clearInterval(heartbeatTimer);heartbeatTimer=null;current=null;$('#fb-complete').disabled=true;$('#fb-cancel').disabled=true;$('#fb-result-url').value='';stateText('No active job.'); 
   }
   $('#fb-submit').onclick=submit;
   $('#fb-poll').onclick=()=>checkHealth().then(()=>claim());
   $('#fb-start').onclick=async()=>{if(!await checkHealth())return;cfg.enabled=true;paused=false;save();if(timer)clearInterval(timer);timer=setInterval(claim,10000);log('Worker started. Keep this Flow tab open and active.');claim();};
   $('#fb-pause').onclick=async()=>{paused=!paused;$('#fb-pause').textContent=paused?'Resume':'Pause';try{await api('/api/queue/control','POST',{action:paused?'pause':'resume'});}catch(e){log('Queue control: '+e.message);}log(paused?'Worker paused.':'Worker resumed.');if(!paused)claim();};
   $('#fb-stop').onclick=()=>{cfg.enabled=false;paused=true;save();if(timer)clearInterval(timer);timer=null;log('Worker stopped. Active job remains leased until completion or timeout.');};
-  $('#fb-complete').onclick=()=>report('completed');
+  $('#fb-complete').onclick=()=>report('completed');\n  $('#fb-cancel').onclick=async()=>{if(!current)return;try{await api('/api/jobs/'+current.id+'/cancel','POST',{});log('Cancelled '+current.id);clearInterval(heartbeatTimer);heartbeatTimer=null;current=null;$('#fb-complete').disabled=true;$('#fb-cancel').disabled=true;stateText('Job cancelled.');}catch(e){log('Cancel failed: '+e.message);}};
   $('#fb-export').onclick=()=>{const blob=new Blob([JSON.stringify(cfg,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='flow-bridge-settings.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);};
   $('#fb-import').onclick=()=>$('#fb-import-file').click();
   $('#fb-import-file').onchange=async(e)=>{const file=e.target.files?.[0];if(!file)return;try{const imported=JSON.parse(await file.text());if(typeof imported.apiUrl!=='string'||typeof imported.token!=='string')throw new Error('Invalid settings file');cfg={...defaults,...imported};save();$('#fb-url').value=cfg.apiUrl;$('#fb-token').value=cfg.token;log('Settings imported.');checkHealth();}catch(err){log('Import failed: '+err.message);}e.target.value='';};
