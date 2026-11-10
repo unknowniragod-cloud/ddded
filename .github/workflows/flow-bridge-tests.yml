@@ -1,0 +1,20 @@
+name: Flow Bridge tests
+on:
+  push:
+    paths:
+      - "flow-bridge/**"
+      - ".github/workflows/flow-bridge-tests.yml"
+  pull_request:
+    paths:
+      - "flow-bridge/**"
+      - ".github/workflows/flow-bridge-tests.yml"
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r flow-bridge/requirements.txt httpx pytest
+      - run: pytest -q flow-bridge/tests
