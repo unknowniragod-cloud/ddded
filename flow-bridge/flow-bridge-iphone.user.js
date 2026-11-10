@@ -77,7 +77,7 @@
   async function submit(){
     const prompt=$('#fb-prompt').value.trim(); if(!prompt) return log('Enter a prompt first.');
     try{cfg.mode=$('#fb-mode').value;cfg.model=$('#fb-model').value.trim();cfg.ratio=$('#fb-ratio').value;cfg.resolution=$('#fb-resolution').value;cfg.duration=$('#fb-duration').value;save();
-      const references=$('#fb-references').value.split(/\\n+/).map(x=>x.trim()).filter(Boolean).map(url=>({url,kind:'image'}));
+      const references=$('#fb-references').value.split(/\n+/).map(x=>x.trim()).filter(Boolean).map(url=>({url,kind:'image'}));
       const j=await api('/api/jobs','POST',{prompt,mode:cfg.mode,model:cfg.model||null,aspect_ratio:cfg.ratio==='auto'?null:cfg.ratio,references,options:{source:'iphone-safari',resolution:cfg.resolution,duration:cfg.duration}});$('#fb-prompt').value='';log('Queued '+j.id);stateText('Queued job '+j.id);}
     catch(e){log('Submit failed: '+e.message);}
   }
@@ -122,7 +122,8 @@
   $('#fb-start').onclick=async()=>{if(!await checkHealth())return;cfg.enabled=true;paused=false;save();if(timer)clearInterval(timer);timer=setInterval(claim,10000);log('Worker started. Keep this Flow tab open and active.');claim();};
   $('#fb-pause').onclick=async()=>{paused=!paused;$('#fb-pause').textContent=paused?'Resume':'Pause';try{await api('/api/queue/control','POST',{action:paused?'pause':'resume'});}catch(e){log('Queue control: '+e.message);}log(paused?'Worker paused.':'Worker resumed.');if(!paused)claim();};
   $('#fb-stop').onclick=()=>{cfg.enabled=false;paused=true;save();if(timer)clearInterval(timer);timer=null;log('Worker stopped. Active job remains leased until completion or timeout.');};
-  $('#fb-complete').onclick=()=>report('completed');\n  $('#fb-cancel').onclick=async()=>{if(!current)return;try{await api('/api/jobs/'+current.id+'/cancel','POST',{});log('Cancelled '+current.id);clearInterval(heartbeatTimer);heartbeatTimer=null;current=null;$('#fb-complete').disabled=true;$('#fb-cancel').disabled=true;stateText('Job cancelled.');}catch(e){log('Cancel failed: '+e.message);}};
+  $('#fb-complete').onclick=()=>report('completed');
+  $('#fb-cancel').onclick=async()=>{if(!current)return;try{await api('/api/jobs/'+current.id+'/cancel','POST',{});log('Cancelled '+current.id);clearInterval(heartbeatTimer);heartbeatTimer=null;current=null;$('#fb-complete').disabled=true;$('#fb-cancel').disabled=true;stateText('Job cancelled.');}catch(e){log('Cancel failed: '+e.message);}};
   $('#fb-export').onclick=()=>{const blob=new Blob([JSON.stringify(cfg,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='flow-bridge-settings.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);};
   $('#fb-import').onclick=()=>$('#fb-import-file').click();
   $('#fb-import-file').onchange=async(e)=>{const file=e.target.files?.[0];if(!file)return;try{const imported=JSON.parse(await file.text());if(typeof imported.apiUrl!=='string'||typeof imported.token!=='string')throw new Error('Invalid settings file');cfg={...defaults,...imported};save();$('#fb-url').value=cfg.apiUrl;$('#fb-token').value=cfg.token;log('Settings imported.');checkHealth();}catch(err){log('Import failed: '+err.message);}e.target.value='';};
