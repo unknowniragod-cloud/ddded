@@ -101,7 +101,7 @@ curl -X POST "$FLOW_BRIDGE_URL/api/jobs/JOB_ID/status" \
   -d '{"status":"completed","progress":100,"result":{"url":"https://example.invalid/result"}}'
 ```
 
-The result URL above is illustrative only; use a real result URL obtained from the browser. Do not mark a job completed until the output has been verified.
+The result URL above is illustrative only; use a real result URL obtained from the browser. Do not mark a job completed until the output has been verified. Queue pause/stop prevents new claims; it does not terminate a generation already running in Flow. Cancel that job explicitly with \`POST /api/jobs/{id}/cancel\`.
 
 ## Environment variables
 
