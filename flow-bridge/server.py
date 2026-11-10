@@ -89,6 +89,25 @@ def startup():
       references_json TEXT NOT NULL DEFAULT '[]', options_json TEXT NOT NULL DEFAULT '{}',
       result_json TEXT NOT NULL DEFAULT '{}', error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
       started_at TEXT, finished_at TEXT)""")
+    # In-place migration for the original prototype schema; preserve old jobs.
+    existing = {row["name"] for row in c.execute("PRAGMA table_info(jobs)").fetchall()}
+    owner_default = hashlib.sha256(TOKEN.encode()).hexdigest() if TOKEN else "unconfigured"
+    additions = {
+      "owner": "TEXT NOT NULL DEFAULT '" + owner_default + "'",
+      "mode": "TEXT NOT NULL DEFAULT 'auto'", "progress": "INTEGER NOT NULL DEFAULT 0",
+      "worker_id": "TEXT", "lease_expires_at": "TEXT",
+      "retry_count": "INTEGER NOT NULL DEFAULT 0", "max_retries": "INTEGER NOT NULL DEFAULT 2",
+      "next_attempt_at": "TEXT", "references_json": "TEXT NOT NULL DEFAULT '[]'",
+      "options_json": "TEXT NOT NULL DEFAULT '{}'", "result_json": "TEXT NOT NULL DEFAULT '{}'",
+      "started_at": "TEXT", "finished_at": "TEXT"
+    }
+    for name, declaration in additions.items():
+        if name not in existing:
+            c.execute("ALTER TABLE jobs ADD COLUMN " + name + " " + declaration)
+    if "result" in existing:
+        c.execute("UPDATE jobs SET result_json=json_object('legacy_result',result) WHERE result IS NOT NULL AND result_json='{}'")
+    # A running prototype job had no lease owner; make it claimable after upgrade.
+    c.execute("UPDATE jobs SET status='queued',worker_id=NULL,lease_expires_at=NULL WHERE status='running' AND worker_id IS NULL")
     c.execute("CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL,updated_at TEXT NOT NULL)")
     c.execute("CREATE INDEX IF NOT EXISTS queue_idx ON jobs(owner,status,next_attempt_at,created_at)")
     c.close()
