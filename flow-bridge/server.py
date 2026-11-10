@@ -126,9 +126,21 @@ class JobIn(BaseModel):
         for r in refs:
             if set(r) - {"name","mime_type","url","kind"}:
                 raise ValueError("Reference accepts name, mime_type, url, kind")
-            if r.get("url") and not str(r["url"]).startswith(("https://","blob:","data:")):
-                raise ValueError("Reference URL must be HTTPS or browser-local")
+            if r.get("url"):
+                url = str(r["url"])
+                if not url.startswith("https://") or len(url) > 2048:
+                    raise ValueError("Reference metadata URL must be HTTPS and at most 2048 characters")
+            if r.get("name") and len(str(r["name"])) > 200:
+                raise ValueError("Reference name is too long")
+            if r.get("mime_type") and len(str(r["mime_type"])) > 100:
+                raise ValueError("Reference MIME type is too long")
         return refs
+    @field_validator("options")
+    @classmethod
+    def options_size(cls, value):
+        if len(json.dumps(value)) > 4000:
+            raise ValueError("Options metadata exceeds 4000 characters")
+        return value
 
 class StatusIn(BaseModel):
     status: str = Field(pattern="^(running|completed|failed|cancelled|queued)$")
