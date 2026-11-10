@@ -174,8 +174,11 @@ def next_job(authorization: str | None=Header(default=None), x_worker_id: str | 
     if not re.fullmatch(r"[A-Za-z0-9_.:-]{3,100}",worker):
         raise HTTPException(400,"X-Worker-ID header required")
     c=db(); c.execute("BEGIN IMMEDIATE")
-    if setting(c,"queue_paused")=="true" or setting(c,"queue_stopped")=="true":
-        c.commit(); c.close(); return {"job":None,"queue_paused":setting(db(),"queue_paused")=="true"}
+    paused = setting(c,"queue_paused") == "true"
+    stopped = setting(c,"queue_stopped") == "true"
+    if paused or stopped:
+        c.commit(); c.close()
+        return {"job":None,"queue_paused":paused,"queue_stopped":stopped}
     recover(c)
     r=c.execute("SELECT * FROM jobs WHERE owner=? AND status='queued' AND (next_attempt_at IS NULL OR next_attempt_at<=?) ORDER BY created_at LIMIT 1",(owner,now())).fetchone()
     if r is None:
